@@ -1,0 +1,54 @@
+export interface Autorizacion {
+    fechaProceso: string;
+    fechaHoraTransaccion: string;
+    cuenta: string;
+    numeroTarjeta: string;
+    fechaExpiracion: string;
+    tipoMensaje: string;
+    monedaDestino: string;
+    montoAutorizado: string;
+    respuestaIso: {
+        codigo: string;
+        descripcion: string;
+    };
+    tipoTransaccion: {
+        codigo: string;
+        descripcion: string;
+    };
+    numeroAutorizacion: string;
+    modoEntradaCaptura: string;
+    codigoComercio: string;
+    nombreComercio: string;
+    nombreCadena: string;
+    giro: string;
+    descripcionGiro: string;
+    codigoProcesoOnline: string;
+    ciudad: string;
+    pais: string;
+    indicadorPresenciaCvv2: string;
+    tipoFranquicia: string;
+    montoOrigen: string;
+    productoMarca: string;
+    tidTerminal: string;
+    tipoDiferido: string;
+    numeroCuotasPactadas: string;
+    binAdquirente: string;
+    binEmisor: string;
+    descripcionBinEmisor: string;
+    respuestaInterna: string;
+    recurrente: string;
+    eci: string;
+    termEntryCapab: string;
+    voucher: string;
+    chipCondicionCode: string;
+    tipoEmisor: string;
+    tipoFactura: string;
+    procesado: string;
+    tipoProducto: string;
+    numeroTransaccion: string;
+    atcActual: string;
+    atcAutorizacion: string;
+    campo34: string;
+    campo55: string;
+    campo56: string;
+}
