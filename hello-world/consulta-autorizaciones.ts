@@ -3,7 +3,7 @@ import mysql from 'mysql2/promise';
 import { RowDataPacket } from 'mysql2';
 import { RequestBody, Filtros, Autorizacion } from '../hello-world/interfaces/index';
 import { generarExcelAutorizaciones } from './utils/generar-excel';
-import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
+import { S3Client, GetObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
 import fs from "fs";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
@@ -15,10 +15,15 @@ export const consultarAutorizacionesHandler = async (
   try {
     const body: RequestBody = typeof event.body === 'string' ? JSON.parse(event.body) : event.body;
     const filtros: Partial<Filtros> = body?.filtros || {};
-    const usuario = body.rolUsuario ?? '';
+    const usuarioId = Number(body.rolUsuario);
     const numeroPagina = Number(body?.paginacion?.numeroPagina ?? 1);
     const tamanioPagina = Number(body?.paginacion?.tamanioPagina ?? 20);
     const nombreArchivo = `autorizaciones_${Date.now()}.xlsx`;
+
+
+    if (!usuarioId || Number.isNaN(usuarioId)) {
+      throw new Error("UsuarioId inválido o no enviado");
+    }
 
     if (!filtros.fechaDesde || !filtros.fechaHasta || !filtros.numeroTarjeta) {
       return response(400, {
@@ -39,9 +44,9 @@ export const consultarAutorizacionesHandler = async (
     });
 
     // Consulta paginada para el response
-    const offset = (numeroPagina - 1) * tamanioPagina;
+    //const offset = (numeroPagina - 1) * tamanioPagina;
     const [rows] = await connection.query(
-      'CALL pa_consultar_autorizaciones(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      'CALL pa_mpg_cautorizaciones(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
       [
         filtros.fechaDesde,
         filtros.fechaHasta,
@@ -60,7 +65,7 @@ export const consultarAutorizacionesHandler = async (
         filtros.numeroCuotas,
         filtros.tipoMensaje,
         filtros.estadoAutorizacion,
-        offset,
+        numeroPagina,
         tamanioPagina
       ]
     );
@@ -93,16 +98,16 @@ export const consultarAutorizacionesHandler = async (
       });
     }
 
-    const autorizacionesPagina:Autorizacion[] = await Promise.all(
+    const autorizacionesPagina: Autorizacion[] = await Promise.all(
       registrosPagina.map(async row => {
-        const panEnmascarado = await aplicarEnmascaramientoDesdeSP(row.vi_c2_tarjeta2, usuario, connection);
+        const panEnmascarado = await aplicarEnmascaramientoDesdeSP(row.vi_c2_tarjeta, usuarioId, connection);
         return mapearAutorizacion(row, panEnmascarado);
       })
     );
 
     // Segunda llamada al SP para el Excel (sin paginación)
     const [excelRows] = await connection.query(
-      'CALL pa_consultar_autorizaciones(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      'CALL pa_mpg_cautorizaciones(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
       [
         filtros.fechaDesde,
         filtros.fechaHasta,
@@ -121,7 +126,7 @@ export const consultarAutorizacionesHandler = async (
         filtros.numeroCuotas,
         filtros.tipoMensaje,
         filtros.estadoAutorizacion,
-        0,
+        1,
         10000
       ]
     );
@@ -131,7 +136,7 @@ export const consultarAutorizacionesHandler = async (
 
     const todasLasAutorizaciones = await Promise.all(
       registrosParaExcel.map(async row => {
-        const panEnmascarado = await aplicarEnmascaramientoDesdeSP(row.vi_c2_tarjeta2, usuario, connection);
+        const panEnmascarado = await aplicarEnmascaramientoDesdeSP(row.vi_c2_tarjeta, usuarioId, connection);
         return mapearAutorizacion(row, panEnmascarado);
       })
     );
@@ -191,11 +196,11 @@ function mapearAutorizacion(row: any, pan: string): Autorizacion {
     montoAutorizado: row.vi_c5_monto_settlement,
     respuestaIso: {
       codigo: row.vi_c39_resp_code,
-      descripcion: row.vi_c39_resp_desc
+      descripcion: row.vi_c39_res
     },
     tipoTransaccion: {
       codigo: row.vi_c3_proccode,
-      descripcion: ""
+      descripcion: row.vi_c39_resp_desc
     },
     numeroAutorizacion: row.vi_c38_autorizacion,
     modoEntradaCaptura: row.vi_pos_entry_mode,
@@ -206,44 +211,44 @@ function mapearAutorizacion(row: any, pan: string): Autorizacion {
     descripcionGiro: row.vi_des_merchant_type,
     codigoProcesoOnline: "",
     ciudad: row.vi_c43_card_acceptor_name_loc,
-    pais: "",
+    pais: row.vi_c43_card_acceptor_name_loc,
     indicadorPresenciaCvv2: row.vi_ind_cvv,
     tipoFranquicia: row.vi_tipoFranquicia,
     montoOrigen: row.vi_c4_monto,
-    productoMarca: "",
+    productoMarca: row.vi_cod_marca,
     tidTerminal: row.vi_c41_terminal_id,
     tipoDiferido: row.vi_codtipodiferido,
     numeroCuotasPactadas: row.vi_cuotaspactadas,
     binAdquirente: row.vi_c32_acq_inst_id,
-    binEmisor: "",
-    descripcionBinEmisor: "",
-    respuestaInterna: "",
-    recurrente: "",
-    eci: "",
-    termEntryCapab: "",
+    binEmisor: row.vi_c33_forw_inst_id,
+    descripcionBinEmisor: row.vi_desc_bin_autoriza,
+    respuestaInterna: row.vi_codigo_respuesta,
+    recurrente: row.vi_indicador_recurrente,
+    eci: row.vi_ECI,
+    termEntryCapab: row.vi_c130_capacity_terminal,
     voucher: "",
-    chipCondicionCode: "",
-    tipoEmisor: "",
-    tipoFactura: "",
+    chipCondicionCode: row.vi_chipcondition_cod,
+    tipoEmisor: row.vi_tipo_emisor,
+    tipoFactura: row.vi_tipofactura,
     procesado: "",
-    tipoProducto: "",
-    numeroTransaccion: "",
-    atcActual: "",
+    tipoProducto: row.vi_tipo_producto,
+    numeroTransaccion: row.vi_c11_audit_number,
+    atcActual: row.vi_c137_app_transac_counter,
     atcAutorizacion: "",
     campo34: "",
-    campo55: "",
-    campo56: ""
+    campo55: row.vi_c55_icc_system,
+    campo56: row.vi_c56_reserved_iso
   };
 }
 
 async function aplicarEnmascaramientoDesdeSP(
   pan: string,
-  usuario: string,
+  usuarioId: number,
   connection: mysql.Connection
 ): Promise<string> {
   try {
-    const sql = "CALL sp_enmascarar_pan(?, ?, @out_pan); SELECT @out_pan AS pan;";
-    const [results] = await connection.query(sql, [usuario, pan]);
+    const sql = "CALL pa_mpg_cenmascarar_pan(?, ?, @out_pan); SELECT @out_pan AS pan;";
+    const [results] = await connection.query(sql, [usuarioId, pan]);
     const panEnmascarado = (results as any[])[1]?.[0]?.pan;
     return panEnmascarado ?? pan;
   } catch (error) {
@@ -262,7 +267,7 @@ export async function uploadFileToS3(filePath: string, bucket: string, key: stri
       Body: fileStream,
     };
     await s3.send(new PutObjectCommand(uploadParams));
-    const getCommand  = new PutObjectCommand({ Bucket: bucket, Key: key });
+    const getCommand = new GetObjectCommand({ Bucket: bucket, Key: key });
     const url = await getSignedUrl(s3, getCommand, { expiresIn: 36000 });
     return url;
   } catch (error) {

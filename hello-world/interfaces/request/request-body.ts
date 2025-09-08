@@ -26,5 +26,5 @@ export interface Paginacion{
 export interface RequestBody{
     filtros: Filtros;
     paginacion: Partial<Paginacion>;
-    rolUsuario?: string;
+    rolUsuario?: number;
 }
