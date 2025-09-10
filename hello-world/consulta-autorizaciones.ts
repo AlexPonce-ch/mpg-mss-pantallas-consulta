@@ -21,11 +21,7 @@ export const consultarAutorizacionesHandler = async (
     const nombreArchivo = `autorizaciones_${Date.now()}.xlsx`;
 
 
-    if (!usuarioId || Number.isNaN(usuarioId)) {
-      throw new Error("UsuarioId inválido o no enviado");
-    }
-
-    if (!filtros.fechaDesde || !filtros.fechaHasta || !filtros.numeroTarjeta) {
+    if (!filtros.fechaDesde || !filtros.fechaHasta || !filtros.numeroTarjeta ||!usuarioId || Number.isNaN(usuarioId)) {
       return response(400, {
         estado: 'ERROR',
         codigoRespuesta: '400',
@@ -36,7 +32,7 @@ export const consultarAutorizacionesHandler = async (
 
     const connection = await mysql.createConnection({
       host: process.env.DB_HOST,
-      port: parseInt(process.env.DB_PORT || '3307'),
+      port: parseInt(process.env.DB_PORT || '3306'),
       user: process.env.DB_USER,
       password: process.env.DB_PASS,
       database: process.env.DB_NAME,
@@ -44,7 +40,6 @@ export const consultarAutorizacionesHandler = async (
     });
 
     // Consulta paginada para el response
-    //const offset = (numeroPagina - 1) * tamanioPagina;
     const [rows] = await connection.query(
       'CALL pa_mpg_cautorizaciones(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
       [
@@ -98,6 +93,8 @@ export const consultarAutorizacionesHandler = async (
       });
     }
 
+    /* Actualizacion  */ 
+    
     const autorizacionesPagina: Autorizacion[] = await Promise.all(
       registrosPagina.map(async row => {
         const panEnmascarado = await aplicarEnmascaramientoDesdeSP(row.vi_c2_tarjeta, usuarioId, connection);
@@ -250,10 +247,10 @@ async function aplicarEnmascaramientoDesdeSP(
     const sql = "CALL pa_mpg_cenmascarar_pan(?, ?, @out_pan); SELECT @out_pan AS pan;";
     const [results] = await connection.query(sql, [usuarioId, pan]);
     const panEnmascarado = (results as any[])[1]?.[0]?.pan;
-    return panEnmascarado ?? pan;
-  } catch (error) {
-    console.error("Error en aplicarEnmascaramientoDesdeSP:", error);
-    return pan;
+    return panEnmascarado || pan;
+  } catch (err: any) {
+      console.error("Error en aplicarEnmascaramientoDesdeSP:", err.message);
+      throw new Error(err.message || "ERROR_ENMASCARAMIENTO");
   }
 }
 
